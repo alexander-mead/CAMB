@@ -360,9 +360,9 @@
     REAL :: z, k
     REAL :: p1h, p2h, pfull, plin
     INTEGER :: i, j, nk, nz
-    REAL, PARAMETER :: pi=3.141592654
     TYPE(HM_cosmology) :: cosi
     TYPE(HM_tables) :: lut
+    REAL, PARAMETER :: pi=3.141592654
 
     !HMcode developed by Alexander Mead (alexander.j.mead@googlemail.com)
     !Please contact me if you have any questions whatsoever
@@ -397,7 +397,7 @@
 
         !Initialise the specific HM_cosmology (fill sigma(R) and P_lin HM_tables)
         !Currently this needs to be done at each z (mainly because of scale-dependent growth with neutrinos)
-        !For non neutrino models this could only be done once, which would speed things up a bit
+        !For non-massive-neutrino models this could only be done once, which would speed things up a bit
         CALL initialise_HM_cosmology(j,cosi,CAMB_PK)
 
         !Sets the current redshift from the table
@@ -662,10 +662,13 @@
     TYPE(MatterPowerData), INTENT(IN) :: CAMB_PK
     INTEGER, INTENT(IN) :: iz
     TYPE(HM_cosmology) :: cosm
-    INTEGER :: i, nk
+    INTEGER :: i
+    REAL :: z, g
     INTEGER, PARAMETER :: imeth=2
-    REAL :: z, g, kmin, kmax
     REAL, PARAMETER :: pi=3.141592654
+    REAL, PARAMETER :: kmin=1e-3
+    REAL, PARAMETER :: kmax=1e2
+    INTEGER, PARAMETER :: nk=128
 
     IF(HM_verbose) WRITE(*,*) 'LINEAR POWER: Filling linear power HM_tables'
 
@@ -679,10 +682,9 @@
         !Fill k-table with the same k points as in the CAMB calculation
         !If a user has specified lots of points this could make the halo-model
         !calculation chug
-        nk=CAMB_PK%num_k
-        cosm%nk=nk
+        cosm%nk=CAMB_PK%num_k
         ALLOCATE(cosm%k_plin(nk))
-        DO i=1,nk
+        DO i=1,cosm%nk
             cosm%k_plin(i)=exp(CAMB_Pk%log_kh(i))
         END DO
 
@@ -690,11 +692,8 @@
 
         !Fill a k-table with an equal-log-spaced k range
         !Note that the minimum should be such that the linear spectrum is accurately a power-law below this wavenumber
-        kmin=1e-3
-        kmax=1e2
-        nk=128
         cosm%nk=nk
-        CALL fill_table(log(kmin),log(kmax),cosm%k_plin,nk)
+        CALL fill_table(log(kmin),log(kmax),cosm%k_plin,cosm%nk)
         cosm%k_plin=exp(cosm%k_plin)
 
     END IF
@@ -709,7 +708,7 @@
     z=CAMB_Pk%Redshifts(iz)
     IF(HM_verbose) WRITE(*,*) 'LINEAR POWER: z of input:', z
 
-    !Fill power table
+    !Fill power table, both cold- and all-matter
     DO i=1,nk
         !Take the power from the current redshift choice
         cosm%plin(i)=MatterPowerData_k(CAMB_PK,DBLE(cosm%k_plin(i)),iz)*(cosm%k_plin(i)**3/(2.*pi**2))
@@ -2980,12 +2979,12 @@
 
     !Fills a table of values of the scale-independent growth function
     TYPE(HM_cosmology) :: cosm
-    INTEGER :: i
-    INTEGER, PARAMETER :: n=64
+    INTEGER :: i   
     REAL :: a, norm
     REAL, ALLOCATABLE :: d_tab(:), v_tab(:), a_tab(:)
     REAL :: ainit, amax, dinit, vinit
     REAL :: acc
+    INTEGER, PARAMETER :: n=64
 
     !The calculation should start at a z when Om_m(z)=1., so that the assumption
     !of starting in the g\propto a growing mode is valid (this will not work for early DE)
