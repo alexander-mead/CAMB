@@ -68,7 +68,7 @@
         REAL :: om_m, om_v, w, wa, f_nu, ns, h, Tcmb, Nnu
         REAL, ALLOCATABLE :: r_sigma(:), sigma(:)
         REAL, ALLOCATABLE :: growth(:), a_growth(:)
-        REAL, ALLOCATABLE :: k_plin(:), plin(:), plinc(:)
+        REAL, ALLOCATABLE :: k_plin(:), plin(:), plinc(:), pdamp(:)
         INTEGER :: nk, ng, nsig
         !AM - Added feedback parameters below at fixed fiducial (DMONLY) values
         REAL :: A_baryon=3.13
@@ -358,7 +358,7 @@
     !!AM - A CAMB derived type that I need
     TYPE(MatterPowerData) :: CAMB_Pk
     REAL :: z, k
-    REAL :: p1h, p2h, pfull, plin
+    REAL :: p1h, p2h, pfull, pdamp, plin
     INTEGER :: i, j, nk, nz
     TYPE(HM_cosmology) :: cosi
     TYPE(HM_tables) :: lut
@@ -406,21 +406,96 @@
         !Initiliasation for the halomodel calcualtion (needs to be done for each z)
         CALL halomod_init(z,lut,cosi)
 
+        CALL dewiggle_init(z,lut,cosi)
+        
         !Loop over k values and calculate P(k)
-        !$OMP PARALLEL DO DEFAULT(SHARED), private(k,plin, pfull,p1h,p2h)
+        !$OMP PARALLEL DO DEFAULT(SHARED), private(k,plin,pfull,pdamp,p1h,p2h)
         DO i=1,nk
             k=exp(CAMB_Pk%log_kh(i))
             plin=p_lin(k,z,0,cosi)
             CALL halomod(k,z,p1h,p2h,pfull,plin,lut,cosi)
-            CAMB_Pk%nonlin_ratio(i,j)=sqrt(pfull/plin)
+            CALL dewiggle(k,pdamp,cosi)
+            CAMB_Pk%nonlin_ratio(i,j)=sqrt(pfull/plin)*sqrt(pdamp/plin)
+            !CAMB_Pk%nonlin_ratio(i,j)=sqrt(pdamp/plin)
+            !CAMB_Pk%nonlin_ratio(i,j)=sqrt(pfull/plin)
         END DO
         !$OMP END PARALLEL DO
 
     END DO
 
-    END SUBROUTINE HMcode
+  END SUBROUTINE HMcode
+  
+  SUBROUTINE dewiggle_init(z,lut,cosm)
 
-    FUNCTION Delta_v(z,lut,cosm)
+    TYPE(HM_cosmology), INTENT(INOUT) :: cosm
+    TYPE(HM_tables), INTENT(IN) :: lut
+    REAL, INTENT(IN) :: z
+    REAL :: kv(4), pv(4)
+    REAL, ALLOCATABLE :: Pk(:), Pk_raw(:), k(:)
+    INTEGER :: i, j, nk
+
+    nk=cosm%nk
+
+    !Allocate a raw array so as to plot the processed and unprocessed results
+    IF(ALLOCATED(Pk_raw)) DEALLOCATE(Pk_raw)
+    ALLOCATE(Pk_raw(nk))
+    IF(ALLOCATED(Pk)) DEALLOCATE(Pk)
+    ALLOCATE(Pk(nk))
+    IF(ALLOCATED(k)) DEALLOCATE(k)
+    ALLOCATE(k(nk))
+
+    !Allocate the internal arrays from the cosmology arrays
+    k=cosm%k_plin
+    Pk=cosm%plin
+
+    !Fix k values - CAMB!
+    kv(1)=0.008
+    kv(2)=0.01
+    kv(3)=0.8
+    kv(4)=1.0
+
+    !Fix p values
+    DO i=1,4
+       pv(i)=exp(find(log(kv(i)),log(k),log(Pk),nk,3,3,2))
+    END DO
+
+    !Create new 'raw' spectrum which has no wiggles
+    DO i=1,nk
+       IF(k(i)<=kv(1) .OR. k(i)>=kv(4)) THEN
+          Pk_raw(i)=Pk(i)
+       ELSE
+          Pk_raw(i)=exp(Lagrange_polynomial(log(k(i)),3,log(kv),log(pv)))
+       END IF
+    END DO
+
+    !Isolate just the wiggles
+    Pk=Pk-Pk_raw
+
+    !Damp the wiggles
+    Pk=Pk*exp(-(lut%sigv*k)**2)
+
+    !Add the damped wiggles back in
+    Pk=Pk+Pk_raw
+
+    !Create the damped power array
+    IF(ALLOCATED(cosm%pdamp)) DEALLOCATE(cosm%pdamp)
+    ALLOCATE(cosm%pdamp(cosm%nk))
+    cosm%pdamp=Pk*grow(z,cosm)**2
+
+  END SUBROUTINE dewiggle_init
+
+  SUBROUTINE dewiggle(k,pdamp,cosm)
+
+    IMPLICIT NONE
+    REAL, INTENT(IN) :: k
+    REAL, INTENT(OUT) :: pdamp
+    TYPE(HM_cosmology), INTENT(IN) :: cosm
+    
+    pdamp=exp(find(log(k),log(cosm%k_plin),log(cosm%pdamp),cosm%nk,3,3,2))
+
+  END SUBROUTINE dewiggle
+
+  FUNCTION Delta_v(z,lut,cosm)
 
     !Function for the virialised overdensity
     REAL :: Delta_v
@@ -589,9 +664,9 @@
     !Calcuates 1-halo and 2-halo terms and combines them to form the full halomodel power
     REAL, INTENT(OUT) :: p1h, p2h, pfull
     REAL, INTENT(IN) :: plin, k, z
-    REAL :: a
     TYPE(HM_cosmology), INTENT(IN) :: cosm
     TYPE(HM_tables), INTENT(IN) :: lut
+    REAL :: a
 
     !Calls expressions for one- and two-halo terms and then combines
     !to form the full power spectrum
@@ -718,7 +793,7 @@
     !Calculate the growth factor at the redshift of interest
     g=grow(z,cosm)
 
-    !Grow the power to z=0
+    !Grow the power to z=0 assuming scale-independent growth factor
     cosm%plin=cosm%plin/(g**2.)
     cosm%plinc=cosm%plinc/(g**2.)
 
