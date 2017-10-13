@@ -1045,11 +1045,14 @@
     g_wcdm=grow(zinf,cosm)
 
     !Make a LCDM HM_cosmology
+    !Only need to make sure model is flat with the same Omega_m and w=-1
+    !This is *only* used for a calculation of the growth function
     cos_lcdm=cosm
     DEALLOCATE(cos_lcdm%growth)
     DEALLOCATE(cos_lcdm%a_growth)
     cos_lcdm%w=-1.
     cos_lcdm%wa=0.
+    cos_lcdm%om_v=1.-cosm%om_m !Added this so that 'making a LCDM cosmology' works for curved models.
 
     ainf=1./(1.+zinf)
 
@@ -2059,15 +2062,12 @@
     !Ignores contributions from radiation (not accurate at high z, but consistent with simulations)!
     REAL :: Hubble2
     REAL, INTENT(IN) :: z
-    REAL :: om_m, om_v, a
     TYPE(HM_cosmology), INTENT(IN) :: cosm
-
-    om_m=cosm%om_m
-    om_v=cosm%om_v
+    REAL :: a
 
     a=1./(1.+z)
 
-    Hubble2=(om_m*(1.+z)**3.)+om_v*X_de(a,cosm)+((1.-om_m-om_v)*(1.+z)**2.)
+    Hubble2=cosm%om_m*(1.+z)**3+cosm%om_v*X_de(a,cosm)+(1.-cosm%om_m-cosm%om_v)*(1.+z)**2
 
     END FUNCTION Hubble2
 
