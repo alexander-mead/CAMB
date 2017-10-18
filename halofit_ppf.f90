@@ -1169,6 +1169,9 @@
 
         !Reset the sum variable for the integration
         sum_2n=0.d0
+        sum_n=0.d0
+        sum_old=0.d0
+        sum_new=0.d0
 
         DO j=1,jmax
 
@@ -1759,7 +1762,10 @@
 
         !Reset the sum variable for the integration
         sum_2n=0.d0
-
+        sum_n=0.d0
+        sum_old=0.d0
+        sum_new=0.d0
+        
         DO j=1,jmax
 
             !Note, you need this to be 1+2**n for some integer n
@@ -1874,6 +1880,9 @@
 
         !Reset the sum variable for the integration
         sum_2n=0.d0
+        sum_n=0.d0
+        sum_old=0.d0
+        sum_new=0.d0
 
         DO j=1,jmax
 
@@ -1973,13 +1982,16 @@
 
     IF(a==b) THEN
 
-        !Fix the answer to zero if the integration limits are identical
-        sigint2=0.d0
+       !Fix the answer to zero if the integration limits are identical
+       sigint2=0.d0
 
     ELSE
 
         !Reset the sum variable for the integration
         sum_2n=0.d0
+        sum_n=0.d0
+        sum_old=0.d0
+        sum_new=0.d0
 
         DO j=1,jmax
 
@@ -2232,6 +2244,9 @@
 
         !Reset the sum variable for the integration
         sum_2n=0.d0
+        sum_n=0.d0
+        sum_old=0.d0
+        sum_new=0.d0
 
         DO j=1,jmax
 
