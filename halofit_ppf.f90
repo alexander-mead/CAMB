@@ -415,8 +415,9 @@
             plin=p_lin(k,z,0,cosi)
             CALL halomod(k,z,p1h,p2h,pfull,plin,lut,cosi)
             CALL dewiggle(k,pdamp,cosi)
-            CAMB_Pk%nonlin_ratio(i,j)=sqrt(pfull/plin)*sqrt(pdamp/plin)
-            !CAMB_Pk%nonlin_ratio(i,j)=sqrt(pdamp/plin)
+            CAMB_Pk%nonlin_ratio(i,j)=sqrt(pfull/plin)!*sqrt(pdamp/plin)
+            CAMB_Pk%nonlin_ratio(i,j)=CAMB_Pk%nonlin_ratio(i,j)*sqrt(pdamp/plin)
+            CAMB_Pk%nonlin_ratio(i,j)=CAMB_Pk%nonlin_ratio(i,j)*sqrt(HM_error(k,lut%knl))
             !CAMB_Pk%nonlin_ratio(i,j)=sqrt(pfull/plin)
         END DO
         !$OMP END PARALLEL DO
@@ -424,6 +425,20 @@
     END DO
 
   END SUBROUTINE HMcode
+
+  FUNCTION HM_error(k,knl)
+
+    IMPLICIT NONE
+    REAL :: HM_error
+    REAL, INTENT(IN) :: k, knl
+
+    REAL, PARAMETER :: A=0. !The magnitude of P(k) error - VARY THIS PARAMETER
+    REAL, PARAMETER :: b=10. !The onset of the error, relative to knl
+    INTEGER, PARAMETER :: n=1 !The slope of the error
+    
+    HM_error=1.+A*(1./(1.+(k/(knl/b))**(-2*n)))
+    
+  END FUNCTION HM_error
   
   SUBROUTINE dewiggle_init(z,lut,cosm)
 
