@@ -54,8 +54,9 @@
     private
 
     integer, parameter :: halofit_original = 1, halofit_bird=2, halofit_peacock=3, halofit_takahashi=4
-    integer, parameter :: halofit_mead=5, halofit_halomodel=6, halofit_casarini=7, halofit_mead2015=8
-    integer, parameter :: halofit_default = halofit_mead
+    integer, parameter :: halofit_mead2016=5, halofit_halomodel=6, halofit_casarini=7, halofit_mead2015=8
+    integer, parameter :: halofit_mead2016_neutrinofix=9
+    integer, parameter :: halofit_default = halofit_mead2016
 
     logical :: HM_verbose = .false.
 
@@ -93,7 +94,7 @@
 
     public THalofit, HM_verbose
     public halofit_default, halofit_original, halofit_bird, halofit_peacock, halofit_takahashi
-    public halofit_mead, halofit_halomodel, halofit_casarini
+    public halofit_mead2016, halofit_mead2015, halofit_mead2016_neutrinofix, halofit_halomodel, halofit_casarini
 
     TYPE HM_cosmology
         !Contains only things that do not need to be recalculated with each new z
@@ -245,8 +246,10 @@
     class is (CAMBdata)
         associate(Params => State%CP)
 
-            IF(this%halofit_version==halofit_mead .OR. this%halofit_version==halofit_halomodel &
-                .OR.  this%halofit_version==halofit_mead2015) THEN
+            IF(this%halofit_version==halofit_mead2016 .OR. &
+                this%halofit_version==halofit_halomodel .OR. &
+                this%halofit_version==halofit_mead2015 .OR. &
+                this%halofit_version==halofit_mead2016_neutrinofix) THEN
                 !AM - Call HMcode here
                 CALL this%HMcode(State,CAMB_Pk)
             ELSE
@@ -517,11 +520,13 @@
 
     !Use imead to switch between the standard and accurate halo-model calcuation
     !0 - Standard (this is just a vanilla halo model calculation with no accuracy tweaks)
-    !1 - Accurate from Mead et al. (2015; arXiv 1505.07833)
+    !1 - Accurate from Mead et al. (2016; arXiv 1602.02154)
     !2 - Accurate from Mead et al. (2015; arXiv 1505.07833; no calibration for massive neutrinos)
+    !3 - Same as Mead et al. (2016) but with fix for massive neutrinos
     IF(this%halofit_version==halofit_halomodel) this%imead=0
-    IF(this%halofit_version==halofit_mead) this%imead=1
+    IF(this%halofit_version==halofit_mead2016) this%imead=1
     IF(this%halofit_version==halofit_mead2015) this%imead=2
+    IF(this%halofit_version==halofit_mead2016_neutrinofix) this%imead=3
 
     HM_verbose = (FeedbackLevel>1)
 
@@ -582,11 +587,11 @@
     IF(this%imead==0) THEN
         !Value that is normally used in halo model predictions
         Delta_v=200
-    ELSE IF(this%imead==1 .OR. this%imead==2) THEN
+    ELSE IF(this%imead==1 .OR. this%imead==2 .OR. this%imead==3) THEN
         !Mead et al. (2015; arXiv 1505.07833) value
         Delta_v=418*(Omega_m_hm(z,cosm)**(-0.352_dl))
         !Mead et al. (2016; arXiv 1602.02154) neutrino addition
-        IF(this%imead==1) Delta_v=Delta_v*(1+0.916_dl*cosm%f_nu)
+        IF(this%imead==1 .OR. this%imead==3) Delta_v=Delta_v*(1+0.916_dl*cosm%f_nu)
     END IF
 
     END FUNCTION Delta_v
@@ -601,10 +606,10 @@
 
     IF(this%imead==0) THEN
         delta_c=1.686
-    ELSE IF(this%imead==1 .or. this%imead==2) THEN
+    ELSE IF(this%imead==1 .or. this%imead==2 .OR. this%imead==3) THEN
         !Mead et al. (2015; arXiv 1505.07833) value
         delta_c=1.59+0.0314*log(lut%sig8z)
-        IF(this%imead==1) THEN
+        IF(this%imead==1 .OR. this%imead==3) THEN
             delta_c=delta_c*(1.+0.262*cosm%f_nu) !Mead et al. (2016; arXiv 1602.02154) neutrino addition
             delta_c=delta_c*(1.+0.0123*log10(Omega_m_hm(z,cosm))) !Nakamura & Suto (1997) fitting formula for LCDM
         END IF
@@ -622,7 +627,7 @@
 
     IF(this%imead==0) THEN
         eta=0.
-    ELSE IF(this%imead==1 .or. this%imead==2) THEN
+    ELSE IF(this%imead==1 .or. this%imead==2 .OR. this%imead==3) THEN
         !The first parameter here is 'eta_0' in Mead et al. (2015; arXiv 1505.07833)
         !eta=0.603-0.3*lut%sig8z
         !AM - made baryon feedback parameter obvious
@@ -643,7 +648,7 @@
     IF(this%imead==0) THEN
         !Set to zero for the standard Poisson one-halo term
         kstar=0.
-    ELSE IF(this%imead==1 .or. this%imead==2) THEN
+    ELSE IF(this%imead==1 .or. this%imead==2 .OR. this%imead==3) THEN
         !One-halo cut-off wavenumber
         !Mead et al. (2015; arXiv 1505.07833) value
         kstar=0.584*(lut%sigv)**(-1.)
@@ -660,7 +665,7 @@
     IF(this%imead==0) THEN
         !Set to 4 for the standard Bullock value
         As=4.
-    ELSE IF(this%imead==1 .or. this%imead==2) THEN
+    ELSE IF(this%imead==1 .or. this%imead==2 .OR. this%imead==3) THEN
         !This is the 'A' halo-concentration parameter in Mead et al. (2015; arXiv 1505.07833)
         !As=3.13
         !AM - added for easy modification of feedback parameter
@@ -679,7 +684,7 @@
     IF(this%imead==0) THEN
         !Set to 0 for the standard linear theory two halo term
         fdamp=0.
-    ELSE IF(this%imead==1) THEN
+    ELSE IF(this%imead==1 .OR. this%imead==3) THEN
         !Mead et al. (2016; arXiv 1602.02154) value
         fdamp=0.0095*lut%sigv100**1.37
     ELSE IF(this%imead==2) THEN
@@ -702,7 +707,7 @@
     IF(this%imead==0) THEN
         !Set to 1 for the standard halomodel sum of one- and two-halo terms
         alpha=1.
-    ELSE IF(this%imead==1) THEN
+    ELSE IF(this%imead==1 .OR. this%imead==3) THEN
         !This uses the top-hat defined neff (HALOFIT uses Gaussian filtered fields instead)
         !Mead et al. (2016; arXiv 1602.02154) value
         alpha=3.24*1.85**lut%neff
@@ -1198,7 +1203,7 @@
     IF(this%imead==0 .OR. this%imead==2) THEN
         ! Mead et al. (2015) used the Dolag (2004) correction
         pow=1.
-    ELSE IF(this%imead==1) THEN
+    ELSE IF(this%imead==1 .OR. this%imead==3) THEN
         ! Mead et al. (2016) changed the power to 1.5 to better accomodate more extreme dark-energy models
         pow=1.5
     END IF
@@ -1490,6 +1495,8 @@
         wk=win(k*(lut%nu(i)**et),lut%rv(i),lut%c(i))
         integrand(i)=(lut%rv(i)**3.)*g*(wk**2.)
     END DO
+
+    IF(this%imead==3) integrand=integrand*(1.-cosm%f_nu)**2
 
     !Carries out the integration
     sum=inttab(lut%nu,integrand,lut%n,1)
