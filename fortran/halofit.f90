@@ -58,6 +58,7 @@
     integer, parameter :: halofit_casarini=7
     integer, parameter :: halofit_mead2016=5, halofit_halomodel=6, halofit_mead2015=8, halofit_mead2020=9
     integer, parameter :: halofit_mead2020_feedback=10
+    integer, parameter :: halofit_smith_paper=11, halofit_bird_paper=12, halofit_takahashi_paper=13
     integer, parameter :: halofit_mead=halofit_mead2016 ! AM Kept for backwards compatability
     integer, parameter :: halofit_default=halofit_mead2016
 
@@ -99,8 +100,8 @@
     public THalofit, HM_verbose
     public halofit_default, halofit_original, halofit_bird, halofit_peacock, halofit_takahashi
     public halofit_mead2016, halofit_mead2015, halofit_mead2020, halofit_halomodel, halofit_casarini
-    public halofit_mead2020_feedback
-    public halofit_mead ! AM for backwards compatability
+    public halofit_mead2020_feedback, halofit_mead
+    public halofit_smith_paper, halofit_bird_paper, halofit_takahashi_paper
 
     TYPE HM_cosmology
         !Contains only things that do not need to be recalculated with each new z
@@ -379,21 +380,24 @@
     real(dl) rk,rn,plin,pnl,pq,ph,plinaa
     real(dl) rknl,y,rncur
     real(dl) f1a,f2a,f3a,f1b,f2b,f3b,frac
-    real(dl) extragam, peacock_fudge
+    real(dl) extragam, extrabeta, Q, P, peacock_fudge
 
-    if (this%halofit_version ==halofit_original .or. this%halofit_version ==halofit_bird &
-        .or. this%halofit_version == halofit_peacock) then
+    if (this%halofit_version == halofit_original &
+        .or. this%halofit_version == halofit_bird &
+        .or. this%halofit_version == halofit_peacock &
+        .or. this%halofit_version == halofit_smith_paper &
+        .or. this%halofit_version == halofit_bird_paper) then
         ! halo model nonlinear fitting formula as described in
         ! Appendix C of Smith et al. (2002)
         !SPB11: Standard halofit underestimates the power on the smallest scales by a
         !factor of two. Add an extra correction from the simulations in Bird, Viel,
         !Haehnelt 2011 which partially accounts for this.
-        if (this%halofit_version ==halofit_bird) then
-            extragam = 0.3159 -0.0765*rn -0.8350*rncur
-            gam=extragam+0.86485+0.2989*rn+0.1631*rncur
+        if (this%halofit_version == halofit_bird .or. this%halofit_version == halofit_bird_paper) then
+            extragam=0.3159-0.0765*rn-0.8350*rncur
         else
-            gam=0.86485+0.2989*rn+0.1631*rncur
+            extragam=0.
         end if
+        gam=0.86485+0.2989*rn+0.1631*rncur+extragam
         a=1.4861+1.83693*rn+1.67618*rn*rn+0.7940*rn*rn*rn+ &
             0.1670756*rn*rn*rn*rn-0.620695*rncur
         a=10**a
@@ -402,8 +406,15 @@
         xmu=10**(-3.54419+0.19086*rn)
         xnu=10**(0.95897+1.2857*rn)
         alpha=1.38848+0.3701*rn-0.1452*rn*rn
-        beta=0.8291+0.9854*rn+0.3400*rn**2+this%fnu*(-6.4868+1.4373*rn**2)
-    elseif (this%halofit_version == halofit_takahashi .or. this%halofit_version == halofit_casarini) then
+        if (this%halofit_version == halofit_bird .or. this%halofit_version == halofit_bird_paper) then
+            extrabeta=this%fnu*(-6.4868+1.4373*rn**2)      
+        else
+            extrabeta=0.
+        end if
+        beta=0.8291+0.9854*rn+0.3400*rn**2+extrabeta
+    elseif (this%halofit_version == halofit_takahashi &
+        .or. this%halofit_version == halofit_takahashi_paper &
+        .or. this%halofit_version == halofit_casarini ) then
         !RT12 Oct: the halofit in Smith+ 2003 predicts a smaller power
         !than latest N-body simulations at small scales.
         !Update the following fitting parameters of gam,a,b,c,xmu,xnu,
@@ -421,8 +432,13 @@
         xmu=0.
         xnu=10**(5.2105+3.6902*rn)
         alpha=abs(6.0835+1.3373*rn-0.1959*rn*rn-5.5274*rncur)
+        if (this%halofit_version == halofit_takahashi .or. this%halofit_version == halofit_casarini) then
+            extrabeta=this%fnu*(1.081+0.395*rn**2)
+        else
+            extrabeta=0.
+        end if
         beta=2.0379-0.7354*rn+0.3157*rn**2+1.2490*rn**3+ &
-            0.3980*rn**4-0.1682*rncur + this%fnu*(1.081 + 0.395*rn**2)
+            0.3980*rn**4-0.1682*rncur+extrabeta 
     else
         call MpiStop('Unknown halofit_version')
     end if
@@ -446,12 +462,38 @@
 
     y=(rk/rknl)
 
-
+    ! Halo term
     ph=a*y**(f1*3)/(1+b*y**(f2)+(f3*c*y)**(3-gam))
-    ph=ph/(1+xmu*y**(-1)+xnu*y**(-2))*(1+this%fnu*0.977)
-    plinaa=plin*(1+this%fnu*47.48*rk**2/(1+1.5*rk**2))
+    ph=ph/(1+xmu*y**(-1)+xnu*y**(-2))
+    if (this%halofit_version == halofit_takahashi &
+        .or. this%halofit_version == halofit_original &
+        .or. this%halofit_version == halofit_bird &
+        .or. this%halofit_version == halofit_peacock &
+        .or. this%halofit_version == halofit_casarini) then
+        Q=this%fnu*0.977
+    else if (this%halofit_version == halofit_bird_paper) then
+        Q=this%fnu*(2.080-12.4*(this%om_m-0.3))/(1.+1.2e-3*y**3)
+    else
+        Q=0.
+    end if  
+    ph=ph*(1.+Q)
+
+    ! Quasi-linear term
+    if (this%halofit_version == halofit_takahashi &
+        .or. this%halofit_version == halofit_original &
+        .or. this%halofit_version == halofit_bird &
+        .or. this%halofit_version == halofit_peacock &
+        .or. this%halofit_version == halofit_casarini) then
+        P=this%fnu*47.48*rk**2/(1.+1.5*rk**2)
+    else if (this%halofit_version == halofit_bird_paper) then
+        P=this%fnu*26.3*rk**2/(1.+1.5*rk**2)
+    else
+        P=0.
+    end if
+    plinaa=plin*(1.+P)
     pq=plin*(1+plinaa)**beta/(1+plinaa*alpha)*exp(-y/4.0-y**2/8.0)
 
+    ! Total power is sum of quasi-linear and halo components
     pnl=pq+ph
 
     if (this%halofit_version == halofit_peacock) then
