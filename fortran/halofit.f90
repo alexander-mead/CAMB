@@ -58,7 +58,7 @@
     integer, parameter :: halofit_casarini=7
     integer, parameter :: halofit_mead2016=5, halofit_halomodel=6, halofit_mead2015=8, halofit_mead2020=9
     integer, parameter :: halofit_mead2020_feedback=10
-    integer, parameter :: halofit_smith_paper=11, halofit_bird_paper=12, halofit_takahashi_paper=13
+    integer, parameter :: halofit_original_paper=11, halofit_bird_paper=12, halofit_takahashi_paper=13
     integer, parameter :: halofit_mead=halofit_mead2016 ! AM Kept for backwards compatability
     integer, parameter :: halofit_default=halofit_mead2016
 
@@ -101,7 +101,7 @@
     public halofit_default, halofit_original, halofit_bird, halofit_peacock, halofit_takahashi
     public halofit_mead2016, halofit_mead2015, halofit_mead2020, halofit_halomodel, halofit_casarini
     public halofit_mead2020_feedback, halofit_mead
-    public halofit_smith_paper, halofit_bird_paper, halofit_takahashi_paper
+    public halofit_original_paper, halofit_bird_paper, halofit_takahashi_paper
 
     TYPE HM_cosmology
         !Contains only things that do not need to be recalculated with each new z
@@ -274,6 +274,9 @@
     real(dl) sig,rknl,rneff,rncur,d1,d2
     real(dl) diff,xlogr1,xlogr2,rmid, h2
     integer i
+    real(dl), parameter :: diff_limit = 1e-3
+    real(dl), parameter :: logr1_init = -2.
+    real(dl), parameter :: logr2_init = 3.5
 
     !$ if (ThreadNum /=0) call OMP_SET_NUM_THREADS(ThreadNum)
 
@@ -312,21 +315,21 @@
                     this%om_m = omega_m(a, this%omm0, State%omega_de, this%w_hf, this%wa_hf)
                     this%om_v = omega_v(a, this%omm0, State%omega_de, this%w_hf, this%wa_hf)
                     this%acur = a
-                    xlogr1=-2.0
-                    xlogr2=3.5
+                    xlogr1=logr1_init
+                    xlogr2=logr2_init
                     do
                         rmid=(xlogr2+xlogr1)/2.0
                         rmid=10**rmid
                         call wint(CAMB_Pk,itf,rmid,sig,d1,d2)
                         diff=sig-1.0
-                        if (abs(diff).le.0.001) then
+                        if (abs(diff).le.diff_limit) then
                             rknl=1./rmid
                             rneff=-3-d1
                             rncur=-d2
                             exit
-                        elseif (diff.gt.0.001) then
+                        elseif (diff.gt.diff_limit) then
                             xlogr1=log10(rmid)
-                        elseif (diff.lt.-0.001) then
+                        elseif (diff.lt.-diff_limit) then
                             xlogr2=log10(rmid)
                         endif
                         if (xlogr2 < -1.9999) then
@@ -385,7 +388,7 @@
     if (this%halofit_version == halofit_original &
         .or. this%halofit_version == halofit_bird &
         .or. this%halofit_version == halofit_peacock &
-        .or. this%halofit_version == halofit_smith_paper &
+        .or. this%halofit_version == halofit_original_paper &
         .or. this%halofit_version == halofit_bird_paper) then
         ! halo model nonlinear fitting formula as described in
         ! Appendix C of Smith et al. (2002)
@@ -414,7 +417,7 @@
         beta=0.8291+0.9854*rn+0.3400*rn**2+extrabeta
     elseif (this%halofit_version == halofit_takahashi &
         .or. this%halofit_version == halofit_takahashi_paper &
-        .or. this%halofit_version == halofit_casarini ) then
+        .or. this%halofit_version == halofit_casarini) then
         !RT12 Oct: the halofit in Smith+ 2003 predicts a smaller power
         !than latest N-body simulations at small scales.
         !Update the following fitting parameters of gam,a,b,c,xmu,xnu,
@@ -462,22 +465,6 @@
 
     y=(rk/rknl)
 
-    ! Halo term
-    ph=a*y**(f1*3)/(1+b*y**(f2)+(f3*c*y)**(3-gam))
-    ph=ph/(1+xmu*y**(-1)+xnu*y**(-2))
-    if (this%halofit_version == halofit_takahashi &
-        .or. this%halofit_version == halofit_original &
-        .or. this%halofit_version == halofit_bird &
-        .or. this%halofit_version == halofit_peacock &
-        .or. this%halofit_version == halofit_casarini) then
-        Q=this%fnu*0.977
-    else if (this%halofit_version == halofit_bird_paper) then
-        Q=this%fnu*(2.080-12.4*(this%om_m-0.3))/(1.+1.2e-3*y**3)
-    else
-        Q=0.
-    end if  
-    ph=ph*(1.+Q)
-
     ! Quasi-linear term
     if (this%halofit_version == halofit_takahashi &
         .or. this%halofit_version == halofit_original &
@@ -492,6 +479,22 @@
     end if
     plinaa=plin*(1.+P)
     pq=plin*(1+plinaa)**beta/(1+plinaa*alpha)*exp(-y/4.0-y**2/8.0)
+
+    ! Halo term
+    ph=a*y**(f1*3)/(1+b*y**(f2)+(f3*c*y)**(3-gam))
+    ph=ph/(1+xmu*y**(-1)+xnu*y**(-2))
+    if (this%halofit_version == halofit_takahashi &
+        .or. this%halofit_version == halofit_original &
+        .or. this%halofit_version == halofit_bird &
+        .or. this%halofit_version == halofit_peacock &
+        .or. this%halofit_version == halofit_casarini) then
+        Q=this%fnu*0.977
+    else if (this%halofit_version == halofit_bird_paper) then
+        Q=this%fnu*(2.080-12.4*(this%omm0-0.3))/(1.+1.2e-3*y**3)
+    else
+        Q=0.
+    end if  
+    ph=ph*(1.+Q)
 
     ! Total power is sum of quasi-linear and halo components
     pnl=pq+ph
